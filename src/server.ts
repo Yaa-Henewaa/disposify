@@ -34,7 +34,7 @@ async function main() {
   app.use("/auth", userRoutes);
   app.use("/api/products", productRoutes);
   app.use("/api/orders", orderRoutes);
-  app.use("/webhook",webhookRoutes)
+  app.use("/api/paystack",webhookRoutes)
 
   app.use(errorHandler);
 

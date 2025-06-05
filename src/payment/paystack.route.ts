@@ -5,7 +5,7 @@ import { paystackWebhook } from '../payment/paystack.service';
 const router = Router();
 
 router.post(
-  '/paystack',
+  '/webhook',
   express.raw({ type: 'application/json' }),
   (req, res, next) => {
 	Promise.resolve(paystackWebhook(req, res)).catch(next);
