@@ -14,7 +14,6 @@
   "devDependencies": {
     "@types/axios": "^0.9.36",
     "@types/express": "^5.0.2",
-    "@types/node": "^22.15.29",
     "@types/node-fetch": "^2.6.12",
     "nodemon": "^3.1.10",
     "prisma": "^5.10.2",
@@ -22,6 +21,7 @@
     "typescript": "^5.8.3"
   },
   "dependencies": {
+    "@types/node": "^22.15.29",
     "@prisma/client": "^5.10.2",
     "@types/bcryptjs": "^2.4.6",
     "@types/cors": "^2.8.18",
