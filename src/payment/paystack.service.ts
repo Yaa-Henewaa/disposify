@@ -244,93 +244,86 @@ export const paystackService = {
   },
 };
 
+
+
 export const paystackWebhook = async (req: Request, res: Response) => {
+  // 1. Verify signature exists
+  const signature = req.headers['x-paystack-signature'];
+  if (!signature) {
+    console.error('⚠️ Missing Paystack signature header');
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+
+  // 2. Validate request body
+  if (!req.body) {
+    console.error('⚠️ Empty webhook body');
+    return res.status(400).json({ error: 'Empty request body' });
+  }
+
   try {
-     console.log('Webhook Headers:', req.headers);
-    console.log('Webhook Body:', req.body);
-    // 1. Validate request body exists
-    if (!req.body) {
-      console.error('Empty webhook body received');
-      return res.status(400).send('Empty request body');
-    }
-
-    // 2. Verify webhook signature
-    const signature = req.headers['x-paystack-signature'];
-    if (!signature || typeof signature !== 'string') {
-      console.error('Missing Paystack signature header');
-      return res.status(400).send('Invalid signature');
-    }
-
-    // Convert body to string safely
-    const bodyString = typeof req.body === 'string' 
-      ? req.body 
-      : JSON.stringify(req.body);
-
+    // 3. Verify signature
     const hash = crypto
       .createHmac('sha512', process.env.PAYSTACK_SECRET_KEY!)
-      .update(bodyString)
+      .update(JSON.stringify(req.body))
       .digest('hex');
 
     if (hash !== signature) {
-      console.error('Invalid Paystack signature');
-      return res.status(400).send('Invalid signature');
+      console.error('⚠️ Invalid signature');
+      return res.status(401).json({ error: 'Invalid signature' });
     }
 
-    const event = req.body.event;
-    const data = req.body.data;
+    // 4. Process event
+    const event = req.body;
+    console.log('🔔 Received Paystack event:', event.event);
 
-    if (event !== 'charge.success') {
-      return res.status(200).send('Event not processed');
-    }
-
-    // 4. Verify payment
-    const verification = await paystackService.verifyPayment({
-      reference: data.reference
-    });
-
-    if (!verification.success) {
-      console.error('Payment verification failed:', verification.error);
-      return res.status(400).send('Payment verification failed');
-    }
+    // 5. Handle successful charges
+    if (event.event === 'charge.success') {
+      const { reference, amount, metadata } = event.data;
 
       // Validate metadata
-      if (!data.metadata?.userId || !data.metadata?.items) {
-        console.error("Invalid metadata in webhook:", data.metadata);
-        return res.sendStatus(400);
+      if (!metadata?.userId || !metadata?.items) {
+        console.error('❌ Missing required metadata');
+        return res.status(400).json({ error: 'Invalid metadata' });
       }
 
-      // Verify the items format
-      const items = data.metadata.items.map((item: { productId: string; quantity: string; }) => ({
-        productId: item.productId,
-        quantity: parseInt(item.quantity, 10), 
-      }));
-
-      // Create order using existing service
-      const orderResult = await createOrder({
-        userId: data.metadata.userId,
-        items: items,
-        transactionId: data.reference,
-       
-      });
-
-      if (!orderResult.success) {
-        console.error("Order creation failed:", orderResult.error);
-        return res.sendStatus(400);
+      // Verify payment (recommended)
+      const verification = await paystackService.verifyPayment({ reference });
+      if (!verification.success) {
+        console.error('❌ Payment verification failed:', reference);
+        return res.status(400).json({ error: 'Payment verification failed' });
       }
 
-      // Log successful order creation
-      console.log(
-        `Order created successfully for payment reference: ${data.reference}`
-      );
-  
+      // Process order
+      try {
+        const orderResult = await createOrder({
+          userId: metadata.userId,
+          items: metadata.items.map((item: { productId: any; quantity: any; }) => ({
+            productId: item.productId,
+            quantity: Number(item.quantity) || 1
+          })),
+          transactionId:reference,
+          //amount: amount / 100 // Convert to currency
+        });
 
-    res.sendStatus(200).send("Webhook processed successfully");
-  } catch (error) {
-    console.error("Webhook error:", error);
-    if (error instanceof Error) {
-      console.error(error.message);
+        if (!orderResult.success) {
+          console.error('❌ Order creation failed:', orderResult.error);
+          return res.status(400).json({ error: 'Order creation failed' });
+        }
+
+        //console.log(`✅ Order created: ${orderResult.orderId}`);
+        return res.status(200).json({ status: 'success' }); // Single response
+
+      } catch (orderError) {
+        console.error('❌ Order processing error:', orderError);
+        return res.status(500).json({ error: 'Order processing failed' });
+      }
     }
-    res.sendStatus(500);
+
+    // For non-charge.success events
+    return res.status(200).json({ status: 'event_not_processed' });
+
+  } catch (error) {
+    console.error('🔥 Webhook processing error:', error);
+    return res.status(500).json({ error: 'Internal server error' });
   }
 };
-
