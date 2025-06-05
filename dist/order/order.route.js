@@ -14,6 +14,3 @@ router
     .route('/:id')
     .get(authMiddleware_1.protect, order_controller_1.getOrderHandler)
     .post(authMiddleware_1.protect, order_controller_1.cancelOrderHandler);
-router
-    .route('/:orderId/payment')
-    .post(authMiddleware_1.protect, order_controller_1.processPaymentHandler);

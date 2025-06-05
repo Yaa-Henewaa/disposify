@@ -8,7 +8,7 @@ const router = (0, express_1.Router)();
 exports.productRoutes = router;
 router
     .route('/')
-    .post(authMiddleware_1.protect, authMiddleware_1.admin, product_controller_1.createProductHandler)
+    .post(authMiddleware_1.protect, product_controller_1.createProductHandler)
     .get(product_controller_1.getAllProductsHandler);
 router
     .route('/:id')

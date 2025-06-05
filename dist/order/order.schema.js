@@ -5,15 +5,19 @@ const express_validator_1 = require("express-validator");
 class OrderSchema {
     static createOrder() {
         return [
-            (0, express_validator_1.body)("items")
-                .isArray({ min: 1 })
-                .withMessage("At least one order item is required"),
-            (0, express_validator_1.body)("items.*.productId")
+            (0, express_validator_1.body)('items')
+                .isArray()
+                .withMessage('Items must be an array')
+                .notEmpty()
+                .withMessage('Order must contain at least one item'),
+            (0, express_validator_1.body)('items.*.productId')
+                .isString()
+                .withMessage('Product ID must be a string')
+                .matches(/^[0-9a-fA-F-]{36}$/)
+                .withMessage('Invalid product ID format'),
+            (0, express_validator_1.body)('items.*.quantity')
                 .isInt({ min: 1 })
-                .withMessage("Product ID must be a positive integer"),
-            (0, express_validator_1.body)("items.*.quantity")
-                .isInt({ min: 1 })
-                .withMessage("Quantity must be at least 1"),
+                .withMessage('Quantity must be a positive integer'),
         ];
     }
     static processPayment() {

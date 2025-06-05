@@ -9,42 +9,60 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
     });
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.cancelOrder = exports.getUserOrders = exports.getOrder = exports.processPayment = exports.createOrder = void 0;
+exports.cancelOrder = exports.getUserOrders = exports.getOrder = exports.processPayment = exports.createOrder = exports.calculateOrderTotal = void 0;
 const client_1 = require("@prisma/client");
 const db_1 = require("../utils/db");
+const paystack_service_1 = require("../payment/paystack.service");
+const appError_1 = require("../middleware/appError");
+const calculateOrderTotal = (items) => __awaiter(void 0, void 0, void 0, function* () {
+    let total = 0;
+    for (const item of items) {
+        const product = yield db_1.prisma.product.findUnique({
+            where: { id: item.productId },
+            select: { price: true, stock: true },
+        });
+        if (!product)
+            throw new Error(`Product ${item.productId} not found`);
+        if (product.stock < item.quantity)
+            throw new Error(`Insufficient stock`);
+        total += (product.price * 100) * item.quantity;
+    }
+    return total;
+});
+exports.calculateOrderTotal = calculateOrderTotal;
 const createOrder = (params) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         return yield db_1.prisma.$transaction((tx) => __awaiter(void 0, void 0, void 0, function* () {
             // Verifying products and calculate total
-            let totalAmount = 0;
             const orderItems = [];
-            // Checking product availability and calculate total
+            //verifying products and build order items
             for (const item of params.items) {
                 const product = yield tx.product.findUnique({
                     where: { id: item.productId },
                 });
                 if (!product) {
-                    throw new Error(`Product with ID ${item.productId} not found`);
+                    throw new Error(`Product ${item.productId} not found`);
                 }
                 if (product.stock < item.quantity) {
-                    throw new Error(`Insufficient stock for product ${product.name}`);
+                    throw new Error(`Insufficient stock for ${product.name}`);
                 }
-                totalAmount += product.price * item.quantity;
                 orderItems.push({
-                    productId: product.id,
+                    productId: item.productId,
                     quantity: item.quantity,
                     priceAtOrder: product.price,
                 });
             }
             //Creatin the order
+            const totalAmount = yield (0, exports.calculateOrderTotal)(params.items);
             const order = yield tx.order.create({
                 data: {
                     userId: params.userId,
-                    totalAmount,
+                    totalAmount: totalAmount,
                     status: client_1.OrderStatus.PENDING,
                     paymentStatus: client_1.PaymentStatus.PENDING,
+                    paymentGatewayTransactionId: params.transactionId,
                     items: {
-                        create: orderItems
+                        create: orderItems,
                     },
                 },
                 include: {
@@ -69,52 +87,49 @@ const createOrder = (params) => __awaiter(void 0, void 0, void 0, function* () {
             return {
                 success: true,
                 order,
+                paymentGatewayTransactionId: order.paymentGatewayTransactionId,
             };
         }));
     }
     catch (error) {
         return {
             success: false,
-            error: error instanceof Error ? error.message : 'Failed to create order',
+            error: error instanceof Error ? error.message : "Failed to create order",
         };
     }
 });
 exports.createOrder = createOrder;
 const processPayment = (params) => __awaiter(void 0, void 0, void 0, function* () {
     try {
-        const paymentSuccess = Math.random() > 0.2; // 80% success rate
-        yield new Promise(resolve => setTimeout(resolve, 1000)); // Simulated delay
-        if (paymentSuccess) {
-            yield db_1.prisma.order.update({
-                where: { id: params.orderId },
-                data: {
-                    paymentStatus: client_1.PaymentStatus.PAID,
-                    status: client_1.OrderStatus.COMPLETED,
-                },
-            });
-            return {
-                success: true,
-                transactionId: `tx_${Math.random().toString(36).substring(2, 10)}`,
-            };
-        }
-        else {
-            yield db_1.prisma.order.update({
-                where: { id: params.orderId },
-                data: {
-                    paymentStatus: client_1.PaymentStatus.FAILED,
-                    status: client_1.OrderStatus.FAILED,
-                },
-            });
+        const paymentResult = yield paystack_service_1.paystackService.initializePayment({
+            email: params.email,
+            amount: params.amount,
+            metadata: params.metadata,
+            reference: `PAY_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`
+        });
+        if (!paymentResult.success) {
             return {
                 success: false,
-                error: 'Payment declined',
+                error: 'Payment initialization failed'
             };
         }
+        return {
+            success: true,
+            transactionId: paymentResult.reference,
+            authorization_url: paymentResult.authorization_url
+        };
     }
     catch (error) {
+        console.error('Payment processing error:', error);
+        if (error instanceof appError_1.AppError) {
+            return {
+                success: false,
+                error: error.message
+            };
+        }
         return {
             success: false,
-            error: error instanceof Error ? error.message : 'Payment processing failed',
+            error: 'Payment processing failed. Please try again.'
         };
     }
 });
@@ -134,8 +149,8 @@ const getOrder = (id) => __awaiter(void 0, void 0, void 0, function* () {
         return order;
     }
     catch (error) {
-        console.error('Error fetching order:', error);
-        throw new Error('Error fetching order');
+        console.error("Error fetching order:", error);
+        throw new Error("Error fetching order");
     }
 });
 exports.getOrder = getOrder;
@@ -151,14 +166,14 @@ const getUserOrders = (userId) => __awaiter(void 0, void 0, void 0, function* ()
                 },
             },
             orderBy: {
-                createdAt: 'desc',
+                createdAt: "desc",
             },
         });
         return orders;
     }
     catch (error) {
-        console.error('Error fetching user orders:', error);
-        throw new Error('Error fetching user orders');
+        console.error("Error fetching user orders:", error);
+        throw new Error("Error fetching user orders");
     }
 });
 exports.getUserOrders = getUserOrders;
@@ -171,19 +186,19 @@ const cancelOrder = (id) => __awaiter(void 0, void 0, void 0, function* () {
         if (!existingOrder) {
             return {
                 success: false,
-                error: 'Order not found',
+                error: "Order not found",
             };
         }
         if (existingOrder.status === client_1.OrderStatus.CANCELLED) {
             return {
                 success: false,
-                error: 'Order is already cancelled',
+                error: "Order is already cancelled",
             };
         }
-        if (existingOrder.status === 'COMPLETED') {
+        if (existingOrder.status === "COMPLETED") {
             return {
                 success: false,
-                error: 'Cannot cancel completed order',
+                error: "Cannot cancel completed order",
             };
         }
         // Cancel the order and restore stock
@@ -220,10 +235,10 @@ const cancelOrder = (id) => __awaiter(void 0, void 0, void 0, function* () {
         };
     }
     catch (error) {
-        console.error('Error cancelling order:', error);
+        console.error("Error cancelling order:", error);
         return {
             success: false,
-            error: error instanceof Error ? error.message : 'Error cancelling order',
+            error: error instanceof Error ? error.message : "Error cancelling order",
         };
     }
 });

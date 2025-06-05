@@ -22,6 +22,7 @@ const product_route_1 = require("./product/product.route");
 const errorMiddleware_1 = require("./middleware/errorMiddleware");
 const client_1 = require("@prisma/client");
 const order_route_1 = require("./order/order.route");
+const paystack_route_1 = require("./payment/paystack.route");
 exports.prisma = new client_1.PrismaClient();
 const app = (0, express_1.default)();
 const PORT = process.env.PORT || 3000;
@@ -46,6 +47,7 @@ function main() {
         app.use("/auth", user_route_1.userRoutes);
         app.use("/api/products", product_route_1.productRoutes);
         app.use("/api/orders", order_route_1.orderRoutes);
+        app.use("/webhook", paystack_route_1.webhookRoutes);
         app.use(errorMiddleware_1.errorHandler);
         app.listen(PORT, () => {
             console.log(`Server is running on http://localhost:${PORT}`);

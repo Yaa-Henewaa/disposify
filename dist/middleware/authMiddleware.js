@@ -33,7 +33,7 @@ const protect = (0, express_async_handler_1.default)((req, res, next) => __await
             res.status(401);
             throw new Error('User not found');
         }
-        req.user = user; // No more TypeScript error
+        req.user = user;
         next();
     }
     catch (error) {

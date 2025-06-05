@@ -12,7 +12,6 @@ const readTemplate = (templateName) => {
 };
 const getVerifyEmailTemplate = (url, code) => {
     let template = readTemplate('verifyEmail.html');
-    // Replace placeholders in the template
     template = template.replace('{{url}}', url);
     template = template.replace('{{code}}', code);
     return {
