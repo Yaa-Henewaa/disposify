@@ -246,48 +246,70 @@ export const paystackService = {
 
 export const paystackWebhook = async (req: Request, res: Response) => {
   try {
-    // Verify webhook signature
-    const hash = crypto
-      .createHmac("sha512", process.env.PAYSTACK_SECRET_KEY!)
-      .update(JSON.stringify(req.body))
-      .digest("hex");
-
-    if (hash !== req.headers["x-paystack-signature"]) {
-      return res.status(400).send("Invalid signature");
+     console.log('Webhook Headers:', req.headers);
+    console.log('Webhook Body:', req.body);
+    // 1. Validate request body exists
+    if (!req.body) {
+      console.error('Empty webhook body received');
+      return res.status(400).send('Empty request body');
     }
 
-    const event = req.body;
+    // 2. Verify webhook signature
+    const signature = req.headers['x-paystack-signature'];
+    if (!signature || typeof signature !== 'string') {
+      console.error('Missing Paystack signature header');
+      return res.status(400).send('Invalid signature');
+    }
 
-    // Handle successful payments
-    if (event.event === "charge.success") {
-      const { reference, metadata, amount } = event.data;
-      // First verify the payment
-      const verificationResult = await paystackService.verifyPayment({
-        reference,
-      });
+    // Convert body to string safely
+    const bodyString = typeof req.body === 'string' 
+      ? req.body 
+      : JSON.stringify(req.body);
 
-      if (!verificationResult.success) {
-        console.error("Payment verification failed:", verificationResult.error);
-        return res.sendStatus(400);
-      }
+    const hash = crypto
+      .createHmac('sha512', process.env.PAYSTACK_SECRET_KEY!)
+      .update(bodyString)
+      .digest('hex');
+
+    if (hash !== signature) {
+      console.error('Invalid Paystack signature');
+      return res.status(400).send('Invalid signature');
+    }
+
+    const event = req.body.event;
+    const data = req.body.data;
+
+    if (event !== 'charge.success') {
+      return res.status(200).send('Event not processed');
+    }
+
+    // 4. Verify payment
+    const verification = await paystackService.verifyPayment({
+      reference: data.reference
+    });
+
+    if (!verification.success) {
+      console.error('Payment verification failed:', verification.error);
+      return res.status(400).send('Payment verification failed');
+    }
 
       // Validate metadata
-      if (!metadata?.userId || !metadata?.items) {
-        console.error("Invalid metadata in webhook:", metadata);
+      if (!data.metadata?.userId || !data.metadata?.items) {
+        console.error("Invalid metadata in webhook:", data.metadata);
         return res.sendStatus(400);
       }
 
       // Verify the items format
-      const items = metadata.items.map((item: { productId: string; quantity: string; }) => ({
+      const items = data.metadata.items.map((item: { productId: string; quantity: string; }) => ({
         productId: item.productId,
         quantity: parseInt(item.quantity, 10), 
       }));
 
       // Create order using existing service
       const orderResult = await createOrder({
-        userId: metadata.userId,
+        userId: data.metadata.userId,
         items: items,
-        transactionId: reference,
+        transactionId: data.reference,
        
       });
 
@@ -298,11 +320,11 @@ export const paystackWebhook = async (req: Request, res: Response) => {
 
       // Log successful order creation
       console.log(
-        `Order created successfully for payment reference: ${reference}`
+        `Order created successfully for payment reference: ${data.reference}`
       );
-    }
+  
 
-    res.sendStatus(200);
+    res.sendStatus(200).send("Webhook processed successfully");
   } catch (error) {
     console.error("Webhook error:", error);
     if (error instanceof Error) {
