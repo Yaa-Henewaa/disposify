@@ -70,8 +70,8 @@ export const createOrder = async (
         data: {
           userId: params.userId,
           totalAmount: totalAmount,
-          status: OrderStatus.PENDING,
-          paymentStatus: PaymentStatus.PENDING,
+          status: OrderStatus.COMPLETED,
+          paymentStatus: PaymentStatus.PAID,
           paymentGatewayTransactionId: params.transactionId,
           items: {
             create: orderItems,
